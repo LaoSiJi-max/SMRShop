@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="GBK"?>
+<beans xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns="http://www.springframework.org/schema/beans"
+	xmlns:p="http://www.springframework.org/schema/p"
+	xmlns:tx="http://www.springframework.org/schema/tx"
+	xmlns:aop="http://www.springframework.org/schema/aop"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans
+	http://www.springframework.org/schema/beans/spring-beans-4.0.xsd
+	http://www.springframework.org/schema/tx
+	http://www.springframework.org/schema/tx/spring-tx-4.0.xsd
+	http://www.springframework.org/schema/aop
+	http://www.springframework.org/schema/aop/spring-aop-4.0.xsd">
+	<!-- 定义数据源Bean，使用C3P0数据源实现，并注入数据源的必要信息 -->
+	<bean id="dataSource" class="com.mchange.v2.c3p0.ComboPooledDataSource"
+		destroy-method="close"
+		p:driverClass="com.mysql.jdbc.Driver"
+		p:jdbcUrl="jdbc:mysql://localhost:3306/smrshopdb"
+		p:user="root"
+		p:password=""
+		p:maxPoolSize="40"
+		p:minPoolSize="2"
+		p:initialPoolSize="2"
+		p:maxIdleTime="30"/>
+	<!-- 定义Hibernate的SessionFactory，SessionFactory需要依赖数据源，注入dataSource -->
+	<bean id="sessionFactory" 
+		class="org.springframework.orm.hibernate4.LocalSessionFactoryBean"
+		p:dataSource-ref="dataSource">
+		<!-- mappingResources用来列出全部映射文件 -->
+		<property name="annotatedClasses">
+			<list>
+				<!-- 以下用来列出所有的PO类-->
+				<value>org.zihao.SMRShop.bean.Admin</value>
+				<value>org.zihao.SMRShop.bean.Book</value>
+				<value>org.zihao.SMRShop.bean.User</value>
+				<value>org.zihao.SMRShop.bean.Order</value>
+			</list>
+		</property>
+		<!-- 定义Hibernate SessionFactory的属性 -->
+		<property name="hibernateProperties">
+			<props>
+				<!-- 指定Hibernate的连接方言 -->
+				<prop key="hibernate.dialect">
+					org.hibernate.dialect.MySQL5InnoDBDialect</prop>
+				<!--是否根据Hiberante映射创建数据表 -->
+				<prop key="hibernate.hbm2ddl.auto">update</prop>
+				<prop key="hibernate.show_sql">true</prop>
+				<prop key="hibernate.format_sql">true</prop>
+				<!-- <prop key="hibernate.current_session_context_class">thread</prop> -->
+                <!-- org.springframework.orm.hibernate4.SpringSessionContext  -->		
+			</props>
+		</property>
+	</bean>
+	
+	<!-- 定义DAO组件，并将SessionFactory注入DAO组件 -->	
+	<bean id="bookDao" class="org.zihao.SMRShop.dao.BookDaoImpl"
+		p:sessionFactory-ref="sessionFactory"/>
+	<bean id="userDao" class="org.zihao.SMRShop.dao.UserDaoImpl"
+		p:sessionFactory-ref="sessionFactory"/>
+	<bean id="adminDao" class="org.zihao.SMRShop.dao.AdminDaoImpl"
+		p:sessionFactory-ref="sessionFactory"/>
+	<bean id="orderDao" class="org.zihao.SMRShop.dao.OrderDaoImpl"
+		p:sessionFactory-ref="sessionFactory"/>
+	
+	<!-- 配置Hibernate的局部事务管理器，使用HibernateTransactionManager类 -->
+	<!-- 该类是PlatformTransactionManager接口针对采用Hibernate的特定实现类 -->
+	<!-- 配置HibernateTransactionManager需依赖注入SessionFactory -->
+	<bean id="transactionManager" 
+		class="org.springframework.orm.hibernate4.HibernateTransactionManager"
+		p:sessionFactory-ref="sessionFactory"/>
+
+<!-- 配置事务增强处理Bean,指定事务管理器 -->
+<tx:advice id="txAdvice" 
+	transaction-manager="transactionManager">
+	<!-- 用于配置详细的事务定义 -->
+	<tx:attributes>
+		<!-- 所有以'get'开头的方法是read-only的 -->
+		<tx:method name="get*" read-only="true"/>
+		<!-- 其他方法使用默认的事务设置，指定超时时长为5秒 -->
+		<tx:method name="*" isolation="DEFAULT"
+			propagation="REQUIRED" timeout="5"/>
+	</tx:attributes>
+</tx:advice>
+<!-- AOP配置的元素 -->
+<aop:config proxy-target-class="true">
+	<!-- 配置一个切入点 -->
+	<aop:pointcut id="myPointcut" expression="execution(* org.zihao.SMRShop.dao.*.*(..)))"/>
+	<!-- 指定在myPointcut切入点应用txAdvice事务增强处理 -->
+	<aop:advisor advice-ref="txAdvice" 
+		pointcut-ref="myPointcut"/>
+</aop:config>
+	
+	<!-- 配置Util -->
+	<bean id="mD5Encryption" class="org.zihao.SMRShop.util.MD5Encryption"/>
+	<!-- 配置Service -->
+	<bean id="adminService" class="org.zihao.SMRShop.service.AdminServiceImpl"
+		p:adminDao-ref="adminDao"
+		p:encryption-ref="mD5Encryption"/>
+	<bean id="bookService" class="org.zihao.SMRShop.service.BookServiceImpl"
+		p:bookDao-ref="bookDao"/>
+	<bean id="userService" class="org.zihao.SMRShop.service.UserServiceImpl"
+		p:userDao-ref="userDao"
+		p:bookDao-ref="bookDao"
+		p:encryption-ref="mD5Encryption"/>
+	<bean id="orderService" class="org.zihao.SMRShop.service.OrderServiceImpl"
+		p:orderDao-ref="orderDao"
+		p:userService-ref="userService"/>
+	<!-- 配置Action -->
+	<bean id="indexAction" class="org.zihao.SMRShop.action.IndexActionImpl" scope="prototype"
+		p:bookService-ref="bookService"/>
+	<bean id="bookAction" class="org.zihao.SMRShop.action.BookActionImpl" scope="prototype"
+		p:bookService-ref="bookService"/>
+	<bean id="userAction" class="org.zihao.SMRShop.action.UserActionImpl" scope="prototype"
+		p:userService-ref="userService"
+		p:orderService-ref="orderService"/>
+	<bean id="adminAction" class="org.zihao.SMRShop.action.AdminActionImpl" scope="prototype"
+		p:adminService-ref="adminService"/>
+	<bean id="adAdminAction" class="org.zihao.SMRShop.action.admin.AdAdminActionImpl" scope="prototype"
+		p:adminService-ref="adminService"/>
+	<bean id="adBookAction" class="org.zihao.SMRShop.action.admin.AdBookActionImpl" scope="prototype"
+		p:bookService-ref="bookService"/>
+	<bean id="adUserAction" class="org.zihao.SMRShop.action.admin.AdUserActionImpl" scope="prototype"
+		p:userService-ref="userService"/>
+	<bean id="adOrderAction" class="org.zihao.SMRShop.action.admin.AdOrderActionImpl" scope="prototype"
+		p:orderService-ref="orderService"/>
+</beans>
